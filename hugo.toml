@@ -1,0 +1,17 @@
+baseURL = 'https://kurette683.github.io/'
+languageCode = 'ko-kr'
+title = '나를 위한 논문 요약'
+theme = "relearn"
+
+[params]
+  themeVariant = "relearn-light"
+  alwaysopen = true
+  disableLandingPageButton = true
+
+[outputs]
+  home = [ "HTML", "RSS", "JSON"]
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
