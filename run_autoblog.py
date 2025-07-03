@@ -120,7 +120,7 @@ chapter: true
                 # Hugo 포스트 내용 생성
                 post_content = f"""---
 title: '{entry.title.replace("'", "''")}'
-menutitle: '{menu_title.replace("'", "''")}'
+menuTitle: '{menu_title.replace("'", "''")}'
 date: {datetime.now().isoformat()}
 draft: false
 ---
