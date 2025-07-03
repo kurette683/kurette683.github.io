@@ -3,7 +3,6 @@ import feedparser
 import google.generativeai as genai
 from datetime import datetime, timedelta, timezone
 import re
-import shutil
 
 # GitHub Secrets에 저장된 API 키를 불러와 설정
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -34,7 +33,7 @@ def get_ai_review(abstract: str) -> str:
         Based on the abstract, please provide the following in KOREAN, formatted in Markdown:
 
         ### 핵심 요약
-        (Summarize the key findings in 2-3 sentences for a clinical dentist or resident.)
+        (Summarize the key findings in 2-3 sentences for a clinical clinical dentist or resident.)
 
         ### 임상적 의의 및 논평
         (Provide a brief commentary on the clinical significance or noteworthy aspects of this study in 1-2 sentences.)
@@ -44,27 +43,6 @@ def get_ai_review(abstract: str) -> str:
     except Exception as e:
         return f"### AI 리뷰 생성 실패\n오류: {e}"
 
-# 오래된 논문 폴더를 삭제하는 함수
-def delete_old_posts(journal_lower):
-    journal_content_path = os.path.join('content', journal_lower)
-    if not os.path.exists(journal_content_path):
-        return
-
-    seven_days_ago = datetime.now() - timedelta(days=7)
-
-    for folder_name in os.listdir(journal_content_path):
-        folder_path = os.path.join(journal_content_path, folder_name)
-        if os.path.isdir(folder_path):
-            try:
-                # 폴더 이름이 날짜 형식(YYYYMMDD)인지 확인
-                folder_date = datetime.strptime(folder_name, "%Y%m%d")
-                if folder_date < seven_days_ago:
-                    print(f"Deleting old post folder: {folder_path}")
-                    shutil.rmtree(folder_path)
-            except ValueError:
-                # 날짜 형식이 아닌 폴더는 무시
-                continue
-
 # 메인 실행 함수
 def create_new_posts():
     today_str = datetime.now().strftime("%Y%m%d")
@@ -72,9 +50,6 @@ def create_new_posts():
     for journal, url in JOURNAL_FEEDS.items():
         journal_lower = journal.lower()
         
-        # 오래된 포스팅 삭제
-        delete_old_posts(journal_lower)
-
         feed = feedparser.parse(url)
         if not feed.entries:
             print(f"No entries found for {journal}. Skipping.")
