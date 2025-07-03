@@ -7,6 +7,7 @@ theme = "relearn"
   themeVariant = "zen-light"
   
   disableLandingPageButton = true
+  alwaysopen = false
 
 [outputs]
   home = [ "HTML", "RSS", "JSON"]
