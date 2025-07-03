@@ -4,7 +4,7 @@ title = '나를 위한 논문 요약'
 theme = "relearn"
 
 [params]
-  themeVariant = "relearn-light"
+  themeVariant = "zen-light"
   alwaysopen = true
   disableLandingPageButton = true
 
