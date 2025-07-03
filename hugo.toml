@@ -8,6 +8,7 @@ theme = "relearn"
   
   disableLandingPageButton = true
   alwaysopen = false
+  collapsibleMenu = true
 
 [outputs]
   home = [ "HTML", "RSS", "JSON"]
