@@ -65,15 +65,16 @@ def create_new_posts():
             # 최신 날짜가 위로 오도록 weight 설정 (큰 숫자 = 낮은 우선순위)
             weight = int(today_str)
             index_content = f"""---
-title: \"{today_str}\"
+title: "{today_str}"
 weight: {weight}
+chapter: true
 ---
 
 ### {today_str} 발표 논문 목록
 
 아래 목록에서 논문 제목을 클릭하여 내용을 확인하세요.
 
-{{{{% children %}}}}
+{{{% children %}}}
 """
             with open(date_index_path, 'w', encoding='utf-8') as f:
                 f.write(index_content)
