@@ -3,6 +3,7 @@ import feedparser
 import google.generativeai as genai
 from datetime import datetime, timedelta, timezone
 import re
+from time import mktime # Added for mktime
 
 # GitHub Secrets에 저장된 API 키를 불러와 설정
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -46,10 +47,10 @@ def get_ai_review(abstract: str) -> str:
 # 메인 실행 함수
 def create_new_posts():
     today_str = datetime.now().strftime("%Y%m%d")
-    
+
     for journal, url in JOURNAL_FEEDS.items():
         journal_lower = journal.lower()
-        
+
         feed = feedparser.parse(url)
         if not feed.entries:
             print(f"No entries found for {journal}. Skipping.")
@@ -65,7 +66,7 @@ def create_new_posts():
             # 최신 날짜가 위로 오도록 weight 설정 (큰 숫자 = 낮은 우선순위)
             weight = int(today_str)
             index_content = f"""---
-title: "{today_str}"
+title: \"{today_str}\"
 weight: {weight}
 chapter: true
 ---
@@ -74,7 +75,7 @@ chapter: true
 
 아래 목록에서 논문 제목을 클릭하여 내용을 확인하세요.
 
-{{{% children %}}}
+{{{{% children %}}}}
 """
             with open(date_index_path, 'w', encoding='utf-8') as f:
                 f.write(index_content)
@@ -89,7 +90,7 @@ chapter: true
                     entry_date = datetime.fromtimestamp(mktime(entry.published_parsed))
                 elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
                     entry_date = datetime.fromtimestamp(mktime(entry.updated_parsed))
-                
+
                 if entry_date and entry_date < seven_days_ago:
                     print(f"Skipping old article: {entry.title} (Published: {entry_date.strftime('%Y-%m-%d')})")
                     continue
@@ -101,7 +102,7 @@ chapter: true
 
                 if os.path.exists(filepath):
                     continue
-                
+
                 print(f"Processing: {entry.title}")
                 ai_review_content = get_ai_review(entry.summary)
 
@@ -130,6 +131,4 @@ draft: false
 
 
 if __name__ == "__main__":
-    # time 모듈의 mktime 함수를 사용하기 위해 추가
-    from time import mktime
     create_new_posts()
