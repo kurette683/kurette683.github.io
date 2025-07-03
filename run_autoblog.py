@@ -1,25 +1,31 @@
 import os
-import feedparser
-import google.generativeai as genai
-from datetime import datetime, timedelta, timezone
 import re
-from time import mktime
-from collections import defaultdict
+from datetime import datetime, timedelta
+from Bio import Entrez
+import google.generativeai as genai
 
-# GitHub Secrets에 저장된 API 키를 불러와 설정
+# --- 설정 ---
+# 1. PubMed API 접속 정보
+Entrez.email = os.getenv("PUBMED_EMAIL")
+if not Entrez.email:
+    raise ValueError("PUBMED_EMAIL environment variable not set.")
+Entrez.tool = "AutoblogScript"
+
+# 2. Gemini API 설정
 api_key = os.getenv("GOOGLE_API_KEY")
 if not api_key:
-    raise ValueError("Google API Key not found. Please set the GOOGLE_API_KEY environment variable.")
+    raise ValueError("Google API Key not found.")
 genai.configure(api_key=api_key)
 
-# 논문을 가져올 저널 RSS 피드 목록 (나중에 여기에 IJOMS, JCS 추가 가능)
-JOURNAL_FEEDS = {
-    "JOMS": "https://www.joms.org/current.rss",
-    # "IJOMS": "https://www.ijoms.com/current.rss",
-    # "JCS": "https://journals.lww.com/jcraniofacialsurgery/_layouts/15/OAKS.Journals/feed.aspx?FeedType=CurrentIssue"
+# 3. 검색할 저널 목록: 폴더명과 실제 검색명을 명확히 매핑
+JOURNAL_MAPPING = {
+    "joms": "J Oral Maxillofac Surg",
+    "ijoms": "Int J Oral Maxillofac Surg",
+    "jcs": "J Craniofac Surg"
 }
 
-# AI에게 요약 및 논평을 요청하는 함수
+# --- 함수 정의 ---
+
 def get_ai_review(abstract: str) -> str:
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
@@ -35,7 +41,7 @@ def get_ai_review(abstract: str) -> str:
         Based on the abstract, please provide the following in KOREAN, formatted in Markdown:
 
         ### 핵심 요약
-        (Summarize the key findings in 2-3 sentences for a clinical clinical dentist or resident.)
+        (Summarize the key findings in 2-3 sentences for a clinical dentist or resident.)
 
         ### 임상적 의의 및 논평
         (Provide a brief commentary on the clinical significance or noteworthy aspects of this study in 1-2 sentences.)
@@ -45,88 +51,89 @@ def get_ai_review(abstract: str) -> str:
     except Exception as e:
         return f"### AI 리뷰 생성 실패\n오류: {e}"
 
-# 메인 실행 함수
-def create_new_posts():
-    for journal, url in JOURNAL_FEEDS.items():
-        journal_lower = journal.lower()
-        journal_content_path = os.path.join('content', journal_lower)
-        os.makedirs(journal_content_path, exist_ok=True)
+def search_and_create_posts():
+    search_days = 7
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=search_days)
+    date_query = f'("{start_date.strftime("%Y/%m/%d")}"[Date - Publication] : "{end_date.strftime("%Y/%m/%d")}"[Date - Publication])'
 
-        feed = feedparser.parse(url)
-        if not feed.entries:
-            print(f"No entries found for {journal}. Skipping.")
+    for short_name, full_name in JOURNAL_MAPPING.items():
+        print(f"--- Searching for articles in '{full_name}' ---")
+        
+        query = f'("{full_name}"[Journal]) AND {date_query}'
+        handle = Entrez.esearch(db="pubmed", term=query, retmax="100")
+        record = Entrez.read(handle)
+        handle.close()
+        id_list = record["IdList"]
+
+        if not id_list:
+            print(f"No new articles found for '{full_name}'.")
             continue
+        
+        print(f"Found {len(id_list)} articles. Fetching details...")
 
-        articles_by_date = defaultdict(list)
-        seven_days_ago = datetime.now() - timedelta(days=7)
+        handle = Entrez.efetch(db="pubmed", id=id_list, rettype="medline", retmode="xml")
+        articles = Entrez.read(handle)
+        handle.close()
 
-        for entry in feed.entries:
+        for article in articles['PubmedArticle']:
             try:
-                entry_date = None
-                if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                    entry_date = datetime.fromtimestamp(mktime(entry.published_parsed))
-                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                    entry_date = datetime.fromtimestamp(mktime(entry.updated_parsed))
+                medline_citation = article['MedlineCitation']
+                article_info = medline_citation['Article']
+                
+                title = article_info['ArticleTitle']
+                if 'Abstract' not in article_info:
+                    print(f"Skipping '{title}' (No abstract).")
+                    continue
+                abstract = article_info['Abstract']['AbstractText'][0]
 
-                if entry_date and entry_date < seven_days_ago:
-                    print(f"Skipping old article: {entry.title} (Published: {entry_date.strftime('%Y-%m-%d')})")
+                mesh_terms = []
+                if 'MeshHeadingList' in medline_citation:
+                    for mesh in medline_citation['MeshHeadingList']:
+                        mesh_terms.append(str(mesh['DescriptorName']))
+                
+                today_str = datetime.now().strftime("%Y%m%d")
+                
+                date_folder_path = os.path.join('content', short_name, today_str)
+                os.makedirs(date_folder_path, exist_ok=True)
+
+                date_index_path = os.path.join(date_folder_path, '_index.md')
+                if not os.path.exists(date_index_path):
+                    weight = int(today_str)
+                    index_content = f'---\ntitle: "{today_str}"\nweight: {weight}\n---\n\n{{{{% children %}}}}'
+                    with open(date_index_path, 'w', encoding='utf-8') as f:
+                        f.write(index_content)
+                
+                safe_title = re.sub(r'[\\/*?:"<>|]', "", title)
+                filename = f"{safe_title.replace(' ', '-').lower()[:50]}.md"
+                filepath = os.path.join(date_folder_path, filename)
+
+                if os.path.exists(filepath):
                     continue
 
-                # Group articles by their publication date
-                pub_date_str = entry_date.strftime("%Y-%m-%d") if entry_date else "Unknown-Date"
-                articles_by_date[pub_date_str].append(entry)
+                print(f"Generating AI review for: {title}")
+                ai_review_content = get_ai_review(abstract)
 
-            except Exception as e:
-                print(f"ERROR processing entry '{entry.title}': {e}")
-
-        for pub_date_str, entries_for_date in articles_by_date.items():
-            filename = f"{pub_date_str}.md"
-            filepath = os.path.join(journal_content_path, filename)
-
-            # Check if file already exists to avoid re-generating AI review unnecessarily
-            if os.path.exists(filepath):
-                print(f"File {filepath} already exists. Skipping AI review generation for this date.")
-                continue
-
-            print(f"Generating content for {pub_date_str}")
-            full_content = []
-
-            # Frontmatter for the date file
-            full_content.append(f"""---
-title: "{pub_date_str}"
+                post_content = f"""---
+title: '{title.replace("'", "''")}'
 date: {datetime.now().isoformat()}
 draft: false
+tags: {str(mesh_terms)}
 ---
-
-""")
-
-            for entry in entries_for_date:
-                try:
-                    ai_review_content = get_ai_review(entry.summary)
-
-                    article_block = f"""
-# {entry.title}
-
-Publication Date : {pub_date_str}
 
 {ai_review_content}
 
 ---
 
 #### 원문 초록 (Original Abstract)
-{entry.summary}
-
-<br>
-
-**[원문 바로가기]({entry.link})**
+{abstract}
 """
-                    full_content.append(article_block)
-                except Exception as e:
-                    print(f"ERROR generating content for article '{entry.title}': {e}")
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(post_content)
+                print(f"Successfully created post: {filename}")
 
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write("\n".join(full_content))
-
+            except Exception as e:
+                print(f"ERROR processing article: {e}")
 
 if __name__ == "__main__":
-    create_new_posts()
+    search_and_create_posts()
