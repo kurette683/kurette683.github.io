@@ -73,7 +73,7 @@ weight: {weight}
 
 아래 목록에서 논문 제목을 클릭하여 내용을 확인하세요.
 
-{{{{% children %}}}}
+{{{{% children showhidden="true" %}}}}
 """
             with open(date_index_path, 'w', encoding='utf-8') as f:
                 f.write(index_content)
@@ -108,7 +108,7 @@ weight: {weight}
                 post_content = f"""---
 title: '{entry.title.replace("'", "''")}'
 date: {datetime.now().isoformat()}
-
+hidden: true
 draft: false
 ---
 
