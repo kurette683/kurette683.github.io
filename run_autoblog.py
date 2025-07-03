@@ -3,7 +3,8 @@ import feedparser
 import google.generativeai as genai
 from datetime import datetime, timedelta, timezone
 import re
-from time import mktime # Added for mktime
+from time import mktime
+from collections import defaultdict
 
 # GitHub Secrets에 저장된 API 키를 불러와 설정
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -44,55 +45,23 @@ def get_ai_review(abstract: str) -> str:
     except Exception as e:
         return f"### AI 리뷰 생성 실패\n오류: {e}"
 
-# 제목을 5단어로 줄이고 '...'을 붙이는 함수
-def create_menutitle(full_title: str) -> str:
-    words = full_title.split()
-    if len(words) > 5:
-        return " ".join(words[:5]) + "..."
-    return full_title
-
 # 메인 실행 함수
 def create_new_posts():
-    today_str = datetime.now().strftime("%Y%m%d")
-
-
     for journal, url in JOURNAL_FEEDS.items():
         journal_lower = journal.lower()
+        journal_content_path = os.path.join('content', journal_lower)
+        os.makedirs(journal_content_path, exist_ok=True)
 
         feed = feedparser.parse(url)
         if not feed.entries:
             print(f"No entries found for {journal}. Skipping.")
             continue
 
-        # 날짜별 폴더 경로 설정
-        date_folder_path = os.path.join('content', journal_lower, today_str)
-        os.makedirs(date_folder_path, exist_ok=True)
-
-        # 날짜별 인덱스 파일 경로 설정 및 생성
-        date_index_path = os.path.join(date_folder_path, '_index.md')
-        if not os.path.exists(date_index_path):
-            # 최신 날짜가 위로 오도록 weight 설정 (큰 숫자 = 낮은 우선순위)
-            weight = int(today_str)
-            index_content = f"""---
-title: \"{today_str}\"
-weight: {weight}
-chapter: true
----
-
-### {today_str} 발표 논문 목록
-
-아래 목록에서 논문 제목을 클릭하여 내용을 확인하세요.
-
-{{{{% children %}}}}
-"""
-            with open(date_index_path, 'w', encoding='utf-8') as f:
-                f.write(index_content)
-
+        articles_by_date = defaultdict(list)
         seven_days_ago = datetime.now() - timedelta(days=7)
 
         for entry in feed.entries:
             try:
-                # 논문 발행일 확인 (published 또는 updated 필드 사용)
                 entry_date = None
                 if hasattr(entry, 'published_parsed') and entry.published_parsed:
                     entry_date = datetime.fromtimestamp(mktime(entry.published_parsed))
@@ -103,27 +72,42 @@ chapter: true
                     print(f"Skipping old article: {entry.title} (Published: {entry_date.strftime('%Y-%m-%d')})")
                     continue
 
-                # 파일명으로 부적합한 문자 제거
-                safe_title = re.sub(r'[\\/*?:"<>|]', "", entry.title)
-                filename = f"{safe_title.replace(' ', '-').lower()[:50]}.md"
-                filepath = os.path.join(date_folder_path, filename)
+                # Group articles by their publication date
+                pub_date_str = entry_date.strftime("%Y-%m-%d") if entry_date else "Unknown-Date"
+                articles_by_date[pub_date_str].append(entry)
 
-                if os.path.exists(filepath):
-                    continue
+            except Exception as e:
+                print(f"ERROR processing entry '{entry.title}': {e}")
 
-                print(f"Processing: {entry.title}")
-                ai_review_content = get_ai_review(entry.summary)
-                
-                # menutitle 생성
-                menu_title = create_menutitle(entry.title)
+        for pub_date_str, entries_for_date in articles_by_date.items():
+            filename = f"{pub_date_str}.md"
+            filepath = os.path.join(journal_content_path, filename)
 
-                # Hugo 포스트 내용 생성
-                post_content = f"""---
-title: '{entry.title.replace("'", "''")}'
-menuTitle: '{menu_title.replace("'", "''")}'
+            # Check if file already exists to avoid re-generating AI review unnecessarily
+            if os.path.exists(filepath):
+                print(f"File {filepath} already exists. Skipping AI review generation for this date.")
+                continue
+
+            print(f"Generating content for {pub_date_str}")
+            full_content = []
+
+            # Frontmatter for the date file
+            full_content.append(f"""---
+title: "{pub_date_str}"
 date: {datetime.now().isoformat()}
 draft: false
 ---
+
+""")
+
+            for entry in entries_for_date:
+                try:
+                    ai_review_content = get_ai_review(entry.summary)
+
+                    article_block = f"""
+# {entry.title}
+
+Publication Date : {pub_date_str}
 
 {ai_review_content}
 
@@ -136,10 +120,12 @@ draft: false
 
 **[원문 바로가기]({entry.link})**
 """
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    f.write(post_content)
-            except Exception as e:
-                print(f"ERROR processing entry '{entry.title}': {e}")
+                    full_content.append(article_block)
+                except Exception as e:
+                    print(f"ERROR generating content for article '{entry.title}': {e}")
+
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write("\n".join(full_content))
 
 
 if __name__ == "__main__":
