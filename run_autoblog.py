@@ -44,9 +44,17 @@ def get_ai_review(abstract: str) -> str:
     except Exception as e:
         return f"### AI 리뷰 생성 실패\n오류: {e}"
 
+# 제목을 5단어로 줄이고 '...'을 붙이는 함수
+def create_menutitle(full_title: str) -> str:
+    words = full_title.split()
+    if len(words) > 5:
+        return " ".join(words[:5]) + "..."
+    return full_title
+
 # 메인 실행 함수
 def create_new_posts():
     today_str = datetime.now().strftime("%Y%m%d")
+
 
     for journal, url in JOURNAL_FEEDS.items():
         journal_lower = journal.lower()
@@ -105,10 +113,14 @@ chapter: true
 
                 print(f"Processing: {entry.title}")
                 ai_review_content = get_ai_review(entry.summary)
+                
+                # menutitle 생성
+                menu_title = create_menutitle(entry.title)
 
                 # Hugo 포스트 내용 생성
                 post_content = f"""---
 title: '{entry.title.replace("'", "''")}'
+menutitle: '{menu_title.replace("'", "''")}'
 date: {datetime.now().isoformat()}
 draft: false
 ---
